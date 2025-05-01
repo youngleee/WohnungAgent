@@ -120,27 +120,55 @@ def main():
             
             # Location filter
             location = st.text_input("Stadt", "Berlin")
+            district = st.text_input("Stadtteil (optional)", 
+                                   help="Leer lassen, um in allen Stadtteilen zu suchen")
             
             # Price range
+            st.subheader("Preis")
+            min_price = st.number_input("Mindest-Kaltmiete (€)", min_value=0, value=0)
             max_price = st.number_input("Maximale Kaltmiete (€)", min_value=0, value=1000)
             
             # Size range
+            st.subheader("Größe")
             min_size = st.number_input("Mindestgröße (m²)", min_value=0, value=30)
+            max_size = st.number_input("Maximale Größe (m²)", min_value=0, value=150)
             
             # Room count
+            st.subheader("Zimmeranzahl")
             min_rooms = st.number_input("Mindestanzahl Zimmer", min_value=0.0, value=1.0, step=0.5)
             max_rooms = st.number_input("Maximale Anzahl Zimmer", min_value=0.0, value=5.0, step=0.5)
             
             # Additional filters
-            balcony = st.checkbox("Balkon erforderlich", value=False)
-            allow_wg = st.checkbox("WG erlauben", value=False)
+            st.subheader("Zusätzliche Filter")
+            col1, col2 = st.columns(2)
+            with col1:
+                balcony = st.checkbox("Balkon", value=False)
+                garden = st.checkbox("Garten", value=False)
+                elevator = st.checkbox("Aufzug", value=False)
+            
+            with col2:
+                furnished = st.checkbox("Möbliert", value=False)
+                pets_allowed = st.checkbox("Haustiere erlaubt", value=False)
+                allow_wg = st.checkbox("WG erlaubt", value=False)
+            
+            # Move-in date
+            st.subheader("Einzugsdatum")
+            move_in_date = st.date_input("Frühestes Einzugsdatum", value=None, help="Leer lassen, wenn sofort verfügbar")
+            
+            # Floor
+            floor_options = ["Beliebig", "Erdgeschoss", "1. bis 4. Stock", "Ab 5. Stock"]
+            floor = st.selectbox("Etage", options=floor_options)
             
             # Source selection
             st.subheader("Quellen")
-            use_wg_gesucht = st.checkbox("WG-Gesucht", value=True)
-            use_immoscout = st.checkbox("Immobilienscout24", value=True)
-            use_immonet = st.checkbox("Immonet", value=True)
-            use_immowelt = st.checkbox("Immowelt", value=True)
+            col3, col4 = st.columns(2)
+            with col3:
+                use_wg_gesucht = st.checkbox("WG-Gesucht", value=True)
+                use_immoscout = st.checkbox("Immobilienscout24", value=True)
+            
+            with col4:
+                use_immonet = st.checkbox("Immonet", value=True)
+                use_immowelt = st.checkbox("Immowelt", value=True)
         
         with sidebar_tab2:
             st.header("Persönliche Daten")
@@ -228,12 +256,21 @@ def main():
         # Filter settings
         filters = {
             'location': location,
+            'district': district,
+            'min_price': min_price,
             'max_price': max_price,
             'min_size': min_size,
+            'max_size': max_size,
             'min_rooms': min_rooms,
             'max_rooms': max_rooms,
             'balcony': balcony,
-            'wg': allow_wg
+            'garden': garden,
+            'elevator': elevator,
+            'furnished': furnished,
+            'pets_allowed': pets_allowed,
+            'wg': allow_wg,
+            'move_in_date': move_in_date,
+            'floor': floor
         }
         
         # Application data
@@ -286,7 +323,15 @@ def main():
                         
                         with col2:
                             st.subheader(row['title'])
-                            st.caption(f"📍 {row['location']}")
+                            
+                            # Location display - account for possibly having district info
+                            location_display = row['location']
+                            if 'district' in row:
+                                location_display = f"{row['district']}, {row['location']}"
+                            elif '-' in row['location']:  # Handle old format like "Berlin-Mitte"
+                                location_display = row['location']
+                                
+                            st.caption(f"📍 {location_display}")
                             
                             col_a, col_b, col_c = st.columns(3)
                             with col_a:
@@ -295,17 +340,32 @@ def main():
                                 st.metric("Größe", f"{row['size']}m²")
                             with col_c:
                                 st.metric("Zimmer", f"{row['rooms']}")
+                            
+                            # Show availability and floor if available
+                            if 'available_from' in row or 'floor' in row:
+                                avail = row.get('available_from', 'Nicht angegeben')
+                                floor = row.get('floor', 'Nicht angegeben')
+                                st.caption(f"Verfügbar ab: {avail} | Etage: {floor}")
                                 
                             st.caption(f"Quelle: {row['source']}")
                             
-                            # Add balcony and WG indicators
-                            tags = []
+                            # Add property feature indicators with emojis
+                            features = []
                             if row.get('has_balcony'):
-                                tags.append("Balkon")
+                                features.append("🏞️ Balkon")
+                            if row.get('has_garden'):
+                                features.append("🌳 Garten")
+                            if row.get('has_elevator'):
+                                features.append("🔼 Aufzug")
+                            if row.get('is_furnished'):
+                                features.append("🪑 Möbliert")
+                            if row.get('pets_allowed'):
+                                features.append("🐕 Haustiere")
                             if row.get('is_wg'):
-                                tags.append("WG")
-                            if tags:
-                                st.text(" | ".join(tags))
+                                features.append("👥 WG")
+                            
+                            if features:
+                                st.markdown(" | ".join(features))
                         
                         with col3:
                             st.write(f"[Link zur Anzeige]({row['url']})")

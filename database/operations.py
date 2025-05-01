@@ -128,28 +128,57 @@ def get_listings_with_filters(filters):
     try:
         query = session.query(Listing)
         
+        # Location and district
         if 'location' in filters and filters['location']:
             query = query.filter(Listing.location.ilike(f"%{filters['location']}%"))
             
+        if 'district' in filters and filters['district']:
+            query = query.filter(Listing.district.ilike(f"%{filters['district']}%"))
+        
+        # Price range
+        if 'min_price' in filters and filters['min_price']:
+            query = query.filter(Listing.price >= filters['min_price'])
+            
         if 'max_price' in filters and filters['max_price']:
             query = query.filter(Listing.price <= filters['max_price'])
-            
+        
+        # Size range
         if 'min_size' in filters and filters['min_size']:
             query = query.filter(Listing.size >= filters['min_size'])
             
+        if 'max_size' in filters and filters['max_size']:
+            query = query.filter(Listing.size <= filters['max_size'])
+        
+        # Room count
         if 'min_rooms' in filters and filters['min_rooms']:
             query = query.filter(Listing.rooms >= filters['min_rooms'])
             
         if 'max_rooms' in filters and filters['max_rooms']:
             query = query.filter(Listing.rooms <= filters['max_rooms'])
-            
+        
+        # Property features
         if 'balcony' in filters and filters['balcony']:
             query = query.filter(Listing.has_balcony == True)
+            
+        if 'garden' in filters and filters['garden']:
+            query = query.filter(Listing.has_garden == True)
+            
+        if 'elevator' in filters and filters['elevator']:
+            query = query.filter(Listing.has_elevator == True)
+            
+        if 'furnished' in filters and filters['furnished']:
+            query = query.filter(Listing.is_furnished == True)
+            
+        if 'pets_allowed' in filters and filters['pets_allowed']:
+            query = query.filter(Listing.pets_allowed == True)
             
         if 'wg' in filters:
             # Only include WG if allowed
             if not filters['wg']:
                 query = query.filter(Listing.is_wg == False)
+        
+        # Date and floor filters are more complex since they're strings
+        # Handle them if needed - will require custom logic based on format
         
         return query.all()
     finally:
