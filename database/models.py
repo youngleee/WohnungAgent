@@ -3,6 +3,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, sessionmaker
 import datetime
 import os
+import logging
 
 Base = declarative_base()
 
@@ -56,10 +57,34 @@ class Application(Base):
 
 def init_db(db_path='sqlite:///database/wohnungagent.db'):
     """Initialize the database and create tables if they don't exist"""
-    engine = create_engine(db_path)
-    Base.metadata.create_all(engine)
-    Session = sessionmaker(bind=engine)
-    return Session()
+    logger = logging.getLogger(__name__)
+    
+    # Make sure database directory exists
+    try:
+        db_dir = os.path.dirname(db_path.replace('sqlite:///', ''))
+        if db_dir and not os.path.exists(db_dir):
+            os.makedirs(db_dir, exist_ok=True)
+            logger.info(f"Created database directory at {db_dir}")
+    except Exception as e:
+        logger.error(f"Error creating database directory: {e}")
+    
+    try:
+        engine = create_engine(db_path)
+        Base.metadata.create_all(engine)
+        Session = sessionmaker(bind=engine)
+        return Session()
+    except Exception as e:
+        logger.error(f"Error initializing database: {e}")
+        # Create a fallback in-memory database if file-based DB fails
+        try:
+            memory_engine = create_engine('sqlite:///:memory:')
+            Base.metadata.create_all(memory_engine)
+            Memory_Session = sessionmaker(bind=memory_engine)
+            logger.warning("Using in-memory database as fallback")
+            return Memory_Session()
+        except Exception as e2:
+            logger.critical(f"Fatal error creating even memory database: {e2}")
+            raise
 
 
 def get_session(db_path='sqlite:///database/wohnungagent.db'):

@@ -32,13 +32,18 @@ logging.basicConfig(level=logging.INFO,
                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Initialize the database
-db_session = init_db()
-
 # Ensure required directories exist
 os.makedirs("temp", exist_ok=True)
 os.makedirs("templates", exist_ok=True)
 os.makedirs("database", exist_ok=True)
+
+# Initialize the database
+try:
+    db_session = init_db()
+    logger.info("Database successfully initialized")
+except Exception as e:
+    logger.error(f"Error initializing database: {e}")
+    db_session = None
 
 # Page configuration
 st.set_page_config(
@@ -63,15 +68,38 @@ async def run_search(filters, search_sources):
     
     search_manager = SearchManager(sources=search_sources)
     try:
-        await search_manager.initialize_scrapers(headless=True)
-        listings = await search_manager.search_all(filters)
-        logger.info(f"Found {len(listings)} new listings from scrapers")
+        # Initialize scrapers
+        try:
+            await search_manager.initialize_scrapers(headless=True)
+        except Exception as e:
+            logger.error(f"Error initializing scrapers: {e}")
+            return []  # Return empty list if initialization fails
         
-        all_listings = search_manager.combine_with_database(listings, filters)
-        logger.info(f"Combined total: {len(all_listings)} listings after filtering")
+        # Perform search
+        try:
+            listings = await search_manager.search_all(filters)
+            logger.info(f"Found {len(listings)} new listings from scrapers")
+        except Exception as e:
+            logger.error(f"Error during search: {e}")
+            listings = []  # Use empty list if search fails
+        
+        # Combine with database
+        try:
+            all_listings = search_manager.combine_with_database(listings, filters)
+            logger.info(f"Combined total: {len(all_listings)} listings after filtering")
+        except Exception as e:
+            logger.error(f"Error combining with database: {e}")
+            all_listings = listings  # Use just the scraper listings if database access fails
+            
         return all_listings
+    except Exception as e:
+        logger.error(f"Unexpected error in run_search: {e}")
+        return []  # Return empty list on error
     finally:
-        await search_manager.close_scrapers()
+        try:
+            await search_manager.close_scrapers()
+        except Exception as e:
+            logger.error(f"Error closing scrapers: {e}")
 
 # Async function to apply to a listing
 async def apply_to_listing(listing, application_data, attachments=None):

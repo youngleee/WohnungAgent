@@ -128,59 +128,119 @@ def get_listings_with_filters(filters):
     try:
         query = session.query(Listing)
         
+        # Apply filters only if the table has the necessary columns
+        # Use explicit hasattr checks for each attribute and log any issues
+        
         # Location and district
-        if 'location' in filters and filters['location']:
-            query = query.filter(Listing.location.ilike(f"%{filters['location']}%"))
+        if 'location' in filters and filters['location'] and hasattr(Listing, 'location'):
+            try:
+                query = query.filter(Listing.location.ilike(f"%{filters['location']}%"))
+            except Exception as e:
+                logger.error(f"Error filtering by location: {e}")
             
-        if 'district' in filters and filters['district']:
-            query = query.filter(Listing.district.ilike(f"%{filters['district']}%"))
+        if 'district' in filters and filters['district'] and hasattr(Listing, 'district'):
+            try:
+                query = query.filter(Listing.district.ilike(f"%{filters['district']}%"))
+            except Exception as e:
+                logger.error(f"Error filtering by district: {e}")
         
         # Price range
-        if 'min_price' in filters and filters['min_price']:
-            query = query.filter(Listing.price >= filters['min_price'])
+        if 'min_price' in filters and filters['min_price'] is not None and hasattr(Listing, 'price'):
+            try:
+                query = query.filter(Listing.price >= float(filters['min_price']))
+            except Exception as e:
+                logger.error(f"Error filtering by min_price: {e}")
             
-        if 'max_price' in filters and filters['max_price']:
-            query = query.filter(Listing.price <= filters['max_price'])
+        if 'max_price' in filters and filters['max_price'] is not None and hasattr(Listing, 'price'):
+            try:
+                query = query.filter(Listing.price <= float(filters['max_price']))
+            except Exception as e:
+                logger.error(f"Error filtering by max_price: {e}")
         
         # Size range
-        if 'min_size' in filters and filters['min_size']:
-            query = query.filter(Listing.size >= filters['min_size'])
+        if 'min_size' in filters and filters['min_size'] is not None and hasattr(Listing, 'size'):
+            try:
+                query = query.filter(Listing.size >= float(filters['min_size']))
+            except Exception as e:
+                logger.error(f"Error filtering by min_size: {e}")
             
-        if 'max_size' in filters and filters['max_size']:
-            query = query.filter(Listing.size <= filters['max_size'])
+        if 'max_size' in filters and filters['max_size'] is not None and hasattr(Listing, 'size'):
+            try:
+                query = query.filter(Listing.size <= float(filters['max_size']))
+            except Exception as e:
+                logger.error(f"Error filtering by max_size: {e}")
         
         # Room count
-        if 'min_rooms' in filters and filters['min_rooms']:
-            query = query.filter(Listing.rooms >= filters['min_rooms'])
+        if 'min_rooms' in filters and filters['min_rooms'] is not None and hasattr(Listing, 'rooms'):
+            try:
+                query = query.filter(Listing.rooms >= float(filters['min_rooms']))
+            except Exception as e:
+                logger.error(f"Error filtering by min_rooms: {e}")
             
-        if 'max_rooms' in filters and filters['max_rooms']:
-            query = query.filter(Listing.rooms <= filters['max_rooms'])
+        if 'max_rooms' in filters and filters['max_rooms'] is not None and hasattr(Listing, 'rooms'):
+            try:
+                query = query.filter(Listing.rooms <= float(filters['max_rooms']))
+            except Exception as e:
+                logger.error(f"Error filtering by max_rooms: {e}")
         
         # Property features
-        if 'balcony' in filters and filters['balcony']:
-            query = query.filter(Listing.has_balcony == True)
+        if 'balcony' in filters and filters['balcony'] and hasattr(Listing, 'has_balcony'):
+            try:
+                query = query.filter(Listing.has_balcony == True)
+            except Exception as e:
+                logger.error(f"Error filtering by balcony: {e}")
             
-        if 'garden' in filters and filters['garden']:
-            query = query.filter(Listing.has_garden == True)
+        if 'garden' in filters and filters['garden'] and hasattr(Listing, 'has_garden'):
+            try:
+                query = query.filter(Listing.has_garden == True)
+            except Exception as e:
+                logger.error(f"Error filtering by garden: {e}")
             
-        if 'elevator' in filters and filters['elevator']:
-            query = query.filter(Listing.has_elevator == True)
+        if 'elevator' in filters and filters['elevator'] and hasattr(Listing, 'has_elevator'):
+            try:
+                query = query.filter(Listing.has_elevator == True)
+            except Exception as e:
+                logger.error(f"Error filtering by elevator: {e}")
             
-        if 'furnished' in filters and filters['furnished']:
-            query = query.filter(Listing.is_furnished == True)
+        if 'furnished' in filters and filters['furnished'] and hasattr(Listing, 'is_furnished'):
+            try:
+                query = query.filter(Listing.is_furnished == True)
+            except Exception as e:
+                logger.error(f"Error filtering by furnished: {e}")
             
-        if 'pets_allowed' in filters and filters['pets_allowed']:
-            query = query.filter(Listing.pets_allowed == True)
+        if 'pets_allowed' in filters and filters['pets_allowed'] and hasattr(Listing, 'pets_allowed'):
+            try:
+                query = query.filter(Listing.pets_allowed == True)
+            except Exception as e:
+                logger.error(f"Error filtering by pets_allowed: {e}")
             
-        if 'wg' in filters:
-            # Only include WG if allowed
-            if not filters['wg']:
-                query = query.filter(Listing.is_wg == False)
+        if 'wg' in filters and hasattr(Listing, 'is_wg'):
+            try:
+                # Only include WG if allowed
+                if not filters['wg']:
+                    query = query.filter(Listing.is_wg == False)
+            except Exception as e:
+                logger.error(f"Error filtering by wg: {e}")
         
         # Date and floor filters are more complex since they're strings
-        # Handle them if needed - will require custom logic based on format
+        # These are currently commented out to prevent errors
+        # if 'move_in_date' in filters and filters['move_in_date'] and hasattr(Listing, 'available_from'):
+        #     # Custom date handling here
+        #     pass
         
-        return query.all()
+        # if 'floor' in filters and filters['floor'] != "Beliebig" and hasattr(Listing, 'floor'):
+        #     # Custom floor handling here
+        #     pass
+        
+        try:
+            return query.all()
+        except Exception as e:
+            logger.error(f"Error executing query: {e}")
+            return []  # Return empty list on error
+            
+    except Exception as e:
+        logger.error(f"Unexpected error in get_listings_with_filters: {e}")
+        return []  # Return empty list on error
     finally:
         session.close()
 

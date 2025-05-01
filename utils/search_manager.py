@@ -9,7 +9,6 @@ from scrapers import (
     ImmonetScraper,
     ImmoweltScraper
 )
-from database import get_listings_with_filters
 
 logger = logging.getLogger(__name__)
 
@@ -125,7 +124,7 @@ class SearchManager:
     
     def combine_with_database(self, new_listings: List[Dict[str, Any]], filters: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
-        Combine new listings with existing database listings
+        Combine new listings from scraping with existing listings from the database
         
         Args:
             new_listings (list): List of new listings from scraping
@@ -134,41 +133,73 @@ class SearchManager:
         Returns:
             list: Combined list of listings
         """
-        # Get existing listings from database
-        db_listings = get_listings_with_filters(filters)
+        # Import database operations here to avoid circular imports
+        try:
+            from database.operations import get_listings_with_filters
+        except ImportError as e:
+            logger.error(f"Error importing database operations: {e}")
+            # If we can't import the database module, just return the new listings
+            for listing in new_listings:
+                listing['from_db'] = False
+            return new_listings
         
-        # Convert DB listings to dictionaries
-        db_listings_dict = [
-            {
-                'id': listing.id,
-                'title': listing.title,
-                'price': listing.price,
-                'size': listing.size,
-                'rooms': listing.rooms,
-                'location': listing.location,
-                'url': listing.url,
-                'contact_email': listing.contact_email,
-                'has_form': listing.has_form,
-                'has_balcony': listing.has_balcony,
-                'is_wg': listing.is_wg,
-                'image_url': listing.image_url,
-                'source': listing.source,
-                'created_at': listing.created_at,
-                'from_db': True
-            }
-            for listing in db_listings
-        ]
-        
-        # Add a flag to new listings
-        for listing in new_listings:
-            listing['from_db'] = False
+        try:
+            # Get existing listings from database
+            db_listings = get_listings_with_filters(filters)
             
-        # Combine lists and ensure uniqueness by URL
-        all_listings = db_listings_dict.copy()
-        db_urls = {listing['url'] for listing in db_listings_dict}
-        
-        for listing in new_listings:
-            if listing['url'] not in db_urls:
-                all_listings.append(listing)
+            # Convert DB listings to dictionaries
+            db_listings_dict = []
+            try:
+                db_listings_dict = [
+                    {
+                        'id': listing.id,
+                        'title': listing.title,
+                        'price': listing.price,
+                        'size': listing.size,
+                        'rooms': listing.rooms,
+                        'location': listing.location,
+                        'url': listing.url,
+                        'contact_email': getattr(listing, 'contact_email', None),
+                        'has_form': getattr(listing, 'has_form', False),
+                        'has_balcony': getattr(listing, 'has_balcony', False),
+                        'has_garden': getattr(listing, 'has_garden', False),
+                        'has_elevator': getattr(listing, 'has_elevator', False),
+                        'is_furnished': getattr(listing, 'is_furnished', False),
+                        'pets_allowed': getattr(listing, 'pets_allowed', False),
+                        'is_wg': getattr(listing, 'is_wg', False),
+                        'district': getattr(listing, 'district', None),
+                        'available_from': getattr(listing, 'available_from', None),
+                        'floor': getattr(listing, 'floor', None),
+                        'image_url': getattr(listing, 'image_url', None),
+                        'source': listing.source,
+                        'created_at': listing.created_at,
+                        'from_db': True
+                    }
+                    for listing in db_listings
+                ]
+            except Exception as e:
+                logger.error(f"Error converting database listings to dictionaries: {e}")
+                # Continue with an empty list if there's an error
+                db_listings_dict = []
+            
+            # Add a flag to new listings
+            for listing in new_listings:
+                listing['from_db'] = False
                 
-        return all_listings 
+            # Combine lists and ensure uniqueness by URL
+            all_listings = db_listings_dict.copy()
+            db_urls = {listing['url'] for listing in db_listings_dict}
+            
+            for listing in new_listings:
+                if listing['url'] not in db_urls:
+                    all_listings.append(listing)
+            
+            logger.info(f"Combined {len(db_listings_dict)} database listings with {len(new_listings)} new listings")
+            return all_listings
+            
+        except Exception as e:
+            logger.error(f"Error combining listings with database: {e}")
+            # If we can't access the database, just return the new listings
+            for listing in new_listings:
+                listing['from_db'] = False
+            return new_listings 
