@@ -180,6 +180,22 @@ if 'first_name' not in st.session_state:
     st.session_state.custom_message = ""
     st.session_state.saved_data = False
 
+# Initialize other session state variables
+if 'selected_listings' not in st.session_state:
+    st.session_state.selected_listings = {}
+
+if 'favorite_listings' not in st.session_state:
+    st.session_state.favorite_listings = {}
+    
+if 'show_auto_select' not in st.session_state:
+    st.session_state.show_auto_select = False
+    
+if 'show_comparison' not in st.session_state:
+    st.session_state.show_comparison = False
+    
+if 'disable_scrapers' not in st.session_state:
+    st.session_state.disable_scrapers = False
+
 def main():
     # Title and description
     st.title("🏠 WohnungAgent")
@@ -756,13 +772,540 @@ def main():
             df_results = pd.DataFrame(results)
             
             if len(df_results) > 0:
-                # Sort by price
-                df_results = df_results.sort_values('price')
+                # Add "Apply to All" button at the top if there are results
+                can_apply = all(required_fields)
+                
+                # Create columns for the batch application buttons
+                batch_col1, batch_col2 = st.columns(2)
+                
+                with batch_col1:
+                    if can_apply:
+                        # Only show the apply to all button if user data is complete
+                        if st.button("🚀 Auf alle Wohnungen bewerben", 
+                                    use_container_width=True,
+                                    help="Sendet automatisch Bewerbungen für alle angezeigten Wohnungen"):
+                            with st.spinner(f"Bewerbe auf {len(df_results)} Wohnungen... Dies kann einige Minuten dauern."):
+                                # Create async tasks for each application
+                                success_count = 0
+                                failed_count = 0
+                                
+                                # Create progress bar
+                                progress_bar = st.progress(0)
+                                status_text = st.empty()
+                                
+                                # Apply to each listing one by one
+                                for index, row in df_results.iterrows():
+                                    listing_data = row.to_dict()
+                                    
+                                    # Skip listings we've already applied to
+                                    if 'id' in listing_data and has_applied_to_listing(listing_data['id']):
+                                        status_text.info(f"Überspringe {listing_data['title']} - bereits beworben")
+                                        continue
+                                    
+                                    # Update status
+                                    percentage_complete = int((index / len(df_results)) * 100)
+                                    progress_bar.progress(percentage_complete)
+                                    status_text.info(f"Bewerbe auf: {listing_data['title']} ({index+1}/{len(df_results)})")
+                                    
+                                    try:
+                                        # Run the application asynchronously
+                                        loop = asyncio.new_event_loop()
+                                        asyncio.set_event_loop(loop)
+                                        success, message = loop.run_until_complete(
+                                            apply_to_listing(listing_data, application_data, attachments)
+                                        )
+                                        
+                                        if success:
+                                            success_count += 1
+                                        else:
+                                            failed_count += 1
+                                            status_text.warning(f"Bewerbung fehlgeschlagen für {listing_data['title']}: {message}")
+                                    except Exception as e:
+                                        failed_count += 1
+                                        status_text.error(f"Fehler bei der Bewerbung für {listing_data['title']}: {str(e)}")
+                                    
+                                    # Small delay to avoid overwhelming the websites
+                                    time.sleep(1)
+                                
+                                # Update to 100% when done
+                                progress_bar.progress(100)
+                                
+                                # Show final results
+                                if success_count > 0:
+                                    st.success(f"✅ {success_count} Bewerbungen erfolgreich gesendet!")
+                                if failed_count > 0:
+                                    st.warning(f"⚠️ {failed_count} Bewerbungen konnten nicht gesendet werden.")
+                    else:
+                        # Show disabled button with explanation
+                        st.button("🚀 Auf alle Wohnungen bewerben", disabled=True,
+                                help="Bitte füllen Sie zuerst Ihre persönlichen Daten aus.")
+                
+                with batch_col2:
+                    # Initialize selection state for listings if it doesn't exist
+                    if 'selected_listings' not in st.session_state:
+                        st.session_state.selected_listings = {}
+                    
+                    # Button to apply to selected listings
+                    if can_apply:
+                        selected_count = sum(1 for selected in st.session_state.selected_listings.values() if selected)
+                        if st.button(f"✅ Auf {selected_count} ausgewählte Wohnungen bewerben", 
+                                   use_container_width=True, 
+                                   disabled=selected_count == 0,
+                                   help="Sendet Bewerbungen nur für die Wohnungen, die Sie ausgewählt haben"):
+                            if selected_count > 0:
+                                with st.spinner(f"Bewerbe auf {selected_count} ausgewählte Wohnungen..."):
+                                    # Create async tasks for each selected application
+                                    success_count = 0
+                                    failed_count = 0
+                                    
+                                    # Create progress bar
+                                    progress_bar = st.progress(0)
+                                    status_text = st.empty()
+                                    
+                                    # Get selected listings
+                                    selected_listings = [
+                                        row for idx, row in df_results.iterrows() 
+                                        if st.session_state.selected_listings.get(idx, False)
+                                    ]
+                                    
+                                    # Apply to each selected listing
+                                    for i, row in enumerate(selected_listings):
+                                        listing_data = row.to_dict()
+                                        
+                                        # Skip listings we've already applied to
+                                        if 'id' in listing_data and has_applied_to_listing(listing_data['id']):
+                                            status_text.info(f"Überspringe {listing_data['title']} - bereits beworben")
+                                            continue
+                                        
+                                        # Update status
+                                        percentage_complete = int((i / len(selected_listings)) * 100)
+                                        progress_bar.progress(percentage_complete)
+                                        status_text.info(f"Bewerbe auf: {listing_data['title']} ({i+1}/{len(selected_listings)})")
+                                        
+                                        try:
+                                            # Run the application asynchronously
+                                            loop = asyncio.new_event_loop()
+                                            asyncio.set_event_loop(loop)
+                                            success, message = loop.run_until_complete(
+                                                apply_to_listing(listing_data, application_data, attachments)
+                                            )
+                                            
+                                            if success:
+                                                success_count += 1
+                                            else:
+                                                failed_count += 1
+                                                status_text.warning(f"Bewerbung fehlgeschlagen für {listing_data['title']}: {message}")
+                                        except Exception as e:
+                                            failed_count += 1
+                                            status_text.error(f"Fehler bei der Bewerbung für {listing_data['title']}: {str(e)}")
+                                        
+                                        # Small delay to avoid overwhelming the websites
+                                        time.sleep(1)
+                                    
+                                    # Update to 100% when done
+                                    progress_bar.progress(100)
+                                    
+                                    # Show final results
+                                    if success_count > 0:
+                                        st.success(f"✅ {success_count} Bewerbungen erfolgreich gesendet!")
+                                    if failed_count > 0:
+                                        st.warning(f"⚠️ {failed_count} Bewerbungen konnten nicht gesendet werden.")
+                    else:
+                        # Show disabled button with explanation
+                        st.button("✅ Auf ausgewählte Wohnungen bewerben", disabled=True,
+                                help="Bitte füllen Sie zuerst Ihre persönlichen Daten aus.")
+                
+                if not can_apply:
+                    st.info("Um Bewerbungen zu senden, füllen Sie bitte Ihre persönlichen Daten im Seitenmenü aus.")
+                
+                # Add a separator after the Apply All button
+                st.divider()
+                
+                # Add selection controls
+                select_all_col, deselect_all_col, reset_col, auto_select_col = st.columns(4)
+                
+                with select_all_col:
+                    if st.button("🔘 Alle auswählen", use_container_width=True):
+                        # Mark all listings as selected
+                        for idx in df_results.index:
+                            st.session_state.selected_listings[idx] = True
+                        st.experimental_rerun()
+                
+                with deselect_all_col:
+                    if st.button("⚪ Alle abwählen", use_container_width=True):
+                        # Mark all listings as not selected
+                        for idx in df_results.index:
+                            st.session_state.selected_listings[idx] = False
+                        st.experimental_rerun()
+                
+                with reset_col:
+                    if st.button("🔄 Auswahl zurücksetzen", use_container_width=True):
+                        # Reset all selections to default state
+                        st.session_state.selected_listings = {}
+                        st.experimental_rerun()
+                
+                with auto_select_col:
+                    # Auto-select button that opens settings in an expander
+                    if st.button("🤖 Auto-Auswahl", use_container_width=True):
+                        st.session_state.show_auto_select = True
+                
+                # Auto-select settings expander
+                if st.session_state.get('show_auto_select', False):
+                    with st.expander("Auto-Auswahl Einstellungen", expanded=True):
+                        st.caption("Wählen Sie Eigenschaften aus, nach denen automatisch Wohnungen ausgewählt werden sollen")
+                        
+                        # Price settings
+                        st.subheader("Preis")
+                        auto_max_price = st.slider("Maximaler Preis", 
+                                                 min_value=int(df_results['price'].min()),
+                                                 max_value=int(df_results['price'].max()),
+                                                 value=int(df_results['price'].median()),
+                                                 step=50)
+                        
+                        # Size settings
+                        st.subheader("Größe")
+                        auto_min_size = st.slider("Mindestgröße", 
+                                                min_value=int(df_results['size'].min()),
+                                                max_value=int(df_results['size'].max()),
+                                                value=int(df_results['size'].median() - 10),
+                                                step=5)
+                        
+                        # Room settings
+                        st.subheader("Zimmer")
+                        auto_min_rooms = st.slider("Mindestzimmeranzahl", 
+                                                 min_value=float(df_results['rooms'].min()),
+                                                 max_value=float(df_results['rooms'].max()),
+                                                 value=float(df_results['rooms'].median()),
+                                                 step=0.5)
+                        
+                        # Features
+                        st.subheader("Eigenschaften")
+                        auto_require_balcony = st.checkbox("Balkon erforderlich", value=False)
+                        auto_require_garden = st.checkbox("Garten erforderlich", value=False)
+                        auto_require_elevator = st.checkbox("Aufzug erforderlich", value=False)
+                        auto_require_furnished = st.checkbox("Möbliert erforderlich", value=False)
+                        auto_require_pets = st.checkbox("Haustiere erlaubt erforderlich", value=False)
+                        
+                        # Limit
+                        st.subheader("Begrenzung")
+                        max_selection = st.slider("Maximale Anzahl von Wohnungen auswählen", 
+                                                min_value=1, 
+                                                max_value=len(df_results),
+                                                value=min(10, len(df_results)),
+                                                step=1)
+                        
+                        # Apply button
+                        if st.button("Automatische Auswahl anwenden", use_container_width=True):
+                            # Reset existing selections
+                            for idx in df_results.index:
+                                st.session_state.selected_listings[idx] = False
+                            
+                            # Sort by price (cheaper first)
+                            sorted_df = df_results.sort_values('price')
+                            
+                            # Apply filters
+                            selected_count = 0
+                            for idx, row in sorted_df.iterrows():
+                                if selected_count >= max_selection:
+                                    break
+                                    
+                                # Apply criteria
+                                meets_criteria = True
+                                
+                                # Price criteria
+                                if row['price'] > auto_max_price:
+                                    meets_criteria = False
+                                
+                                # Size criteria
+                                if row['size'] < auto_min_size:
+                                    meets_criteria = False
+                                
+                                # Room criteria
+                                if row['rooms'] < auto_min_rooms:
+                                    meets_criteria = False
+                                
+                                # Feature criteria
+                                if auto_require_balcony and not row.get('has_balcony', False):
+                                    meets_criteria = False
+                                
+                                if auto_require_garden and not row.get('has_garden', False):
+                                    meets_criteria = False
+                                
+                                if auto_require_elevator and not row.get('has_elevator', False):
+                                    meets_criteria = False
+                                
+                                if auto_require_furnished and not row.get('is_furnished', False):
+                                    meets_criteria = False
+                                
+                                if auto_require_pets and not row.get('pets_allowed', False):
+                                    meets_criteria = False
+                                
+                                # If listing meets all criteria, select it
+                                if meets_criteria:
+                                    st.session_state.selected_listings[idx] = True
+                                    selected_count += 1
+                            
+                            st.success(f"{selected_count} Wohnungen automatisch ausgewählt")
+                            st.session_state.show_auto_select = False
+                            st.experimental_rerun()
+                
+                # Show selection count
+                st.markdown(f"**{sum(1 for selected in st.session_state.selected_listings.values() if selected)}/{len(df_results)} Wohnungen ausgewählt**")
+                
+                # Add filters and sorting controls
+                col_filter1, col_filter2, col_sort = st.columns(3)
+                
+                with col_filter1:
+                    # Add a filter to show only selected listings
+                    show_only_selected = st.checkbox("🔍 Nur ausgewählte Wohnungen anzeigen", 
+                                                help="Zeigt nur die Wohnungen an, die Sie ausgewählt haben")
+                    
+                    # Add a filter to show only favorites
+                    show_only_favorites = st.checkbox("⭐ Nur Favoriten anzeigen",
+                                                 help="Zeigt nur Wohnungen an, die Sie als Favoriten markiert haben")
+                
+                with col_filter2:
+                    # Add a filter to show only apartments that match certain criteria
+                    filter_options = st.multiselect("🏠 Spezialfilter", 
+                                               options=["Balkon", "Garten", "Aufzug", "Möbliert", "Haustiere", "WG"],
+                                               help="Zeigt nur Wohnungen mit bestimmten Eigenschaften")
+                
+                with col_sort:
+                    # Add sorting options
+                    sort_options = ["Preis (aufsteigend)", "Preis (absteigend)", 
+                                  "Größe (aufsteigend)", "Größe (absteigend)",
+                                  "Zimmer (aufsteigend)", "Zimmer (absteigend)"]
+                    sort_by = st.selectbox("🔄 Sortieren nach", options=sort_options, index=0)
+                
+                # Filter results based on user selections
+                filtered_indices = df_results.index.tolist()
+                
+                # Apply special filters if selected
+                if filter_options:
+                    for option in filter_options:
+                        if option == "Balkon":
+                            filtered_indices = [idx for idx in filtered_indices 
+                                              if idx in df_results.index.tolist() 
+                                              and df_results.loc[idx].get('has_balcony', False)]
+                        elif option == "Garten":
+                            filtered_indices = [idx for idx in filtered_indices 
+                                              if idx in df_results.index.tolist() 
+                                              and df_results.loc[idx].get('has_garden', False)]
+                        elif option == "Aufzug":
+                            filtered_indices = [idx for idx in filtered_indices 
+                                              if idx in df_results.index.tolist() 
+                                              and df_results.loc[idx].get('has_elevator', False)]
+                        elif option == "Möbliert":
+                            filtered_indices = [idx for idx in filtered_indices 
+                                              if idx in df_results.index.tolist() 
+                                              and df_results.loc[idx].get('is_furnished', False)]
+                        elif option == "Haustiere":
+                            filtered_indices = [idx for idx in filtered_indices 
+                                              if idx in df_results.index.tolist() 
+                                              and df_results.loc[idx].get('pets_allowed', False)]
+                        elif option == "WG":
+                            filtered_indices = [idx for idx in filtered_indices 
+                                              if idx in df_results.index.tolist() 
+                                              and df_results.loc[idx].get('is_wg', False)]
+                
+                # Apply selected listings filter
+                if show_only_selected:
+                    selected_indices = [idx for idx, selected in st.session_state.selected_listings.items() if selected]
+                    filtered_indices = [idx for idx in filtered_indices if idx in selected_indices]
+                
+                # Apply favorites filter
+                if show_only_favorites:
+                    favorite_indices = [idx for idx, favorited in st.session_state.favorite_listings.items() if favorited]
+                    filtered_indices = [idx for idx in filtered_indices if idx in favorite_indices]
+                
+                # Create filtered dataframe
+                filtered_df_results = df_results.loc[filtered_indices]
+                
+                # Apply sorting
+                if sort_by == "Preis (aufsteigend)":
+                    filtered_df_results = filtered_df_results.sort_values('price')
+                elif sort_by == "Preis (absteigend)":
+                    filtered_df_results = filtered_df_results.sort_values('price', ascending=False)
+                elif sort_by == "Größe (aufsteigend)":
+                    filtered_df_results = filtered_df_results.sort_values('size')
+                elif sort_by == "Größe (absteigend)":
+                    filtered_df_results = filtered_df_results.sort_values('size', ascending=False)
+                elif sort_by == "Zimmer (aufsteigend)":
+                    filtered_df_results = filtered_df_results.sort_values('rooms')
+                elif sort_by == "Zimmer (absteigend)":
+                    filtered_df_results = filtered_df_results.sort_values('rooms', ascending=False)
+                
+                # Initialize favorites if not in session state
+                if 'favorite_listings' not in st.session_state:
+                    st.session_state.favorite_listings = {}
+                
+                # Display number of results after filtering
+                if len(filtered_df_results) != len(df_results):
+                    st.info(f"Zeige {len(filtered_df_results)} von {len(df_results)} Wohnungen nach Filterung")
+                
+                # Display summary of selected apartments
+                selected_df = df_results.loc[[idx for idx, selected in st.session_state.selected_listings.items() if selected]]
+                if not selected_df.empty:
+                    with st.expander("📊 Zusammenfassung der ausgewählten Wohnungen", expanded=False):
+                        col1, col2, col3 = st.columns(3)
+                        
+                        with col1:
+                            avg_price = selected_df['price'].mean()
+                            min_price = selected_df['price'].min()
+                            max_price = selected_df['price'].max()
+                            st.metric("Durchschnittspreis", f"{avg_price:.2f}€")
+                            st.caption(f"Min: {min_price}€ | Max: {max_price}€")
+                        
+                        with col2:
+                            avg_size = selected_df['size'].mean()
+                            min_size = selected_df['size'].min()
+                            max_size = selected_df['size'].max()
+                            st.metric("Durchschnittsgröße", f"{avg_size:.2f}m²")
+                            st.caption(f"Min: {min_size}m² | Max: {max_size}m²")
+                        
+                        with col3:
+                            avg_rooms = selected_df['rooms'].mean()
+                            min_rooms = selected_df['rooms'].min()
+                            max_rooms = selected_df['rooms'].max()
+                            st.metric("Durchschnittliche Zimmeranzahl", f"{avg_rooms:.1f}")
+                            st.caption(f"Min: {min_rooms} | Max: {max_rooms}")
+                        
+                        # Feature statistics
+                        st.subheader("Ausstattungsmerkmale")
+                        
+                        # Calculate percentage of listings with each feature
+                        feature_cols = [
+                            ('has_balcony', 'Balkon'), 
+                            ('has_garden', 'Garten'), 
+                            ('has_elevator', 'Aufzug'),
+                            ('is_furnished', 'Möbliert'),
+                            ('pets_allowed', 'Haustiere erlaubt'),
+                            ('is_wg', 'WG')
+                        ]
+                        
+                        feature_stats = []
+                        for col, label in feature_cols:
+                            if col in selected_df.columns:
+                                count = selected_df[col].sum()
+                                pct = (count / len(selected_df)) * 100
+                                feature_stats.append((label, count, pct))
+                        
+                        # Create feature statistics chart
+                        if feature_stats:
+                            # Create a DataFrame for the chart
+                            chart_data = pd.DataFrame({
+                                'Feature': [f[0] for f in feature_stats],
+                                'Percentage': [f[2] for f in feature_stats]
+                            })
+                            
+                            # Create a horizontal bar chart
+                            st.bar_chart(chart_data.set_index('Feature'), use_container_width=True)
+                            
+                            # Display raw counts
+                            for label, count, pct in feature_stats:
+                                st.caption(f"{label}: {count}/{len(selected_df)} ({pct:.1f}%)")
+                    
+                    # Add a compare button
+                    if len(selected_df) >= 2:
+                        if st.button("🔍 Ausgewählte Wohnungen vergleichen", use_container_width=True):
+                            st.session_state.show_comparison = True
+                    
+                    # Show comparison table if requested
+                    if st.session_state.get('show_comparison', False) and len(selected_df) >= 2:
+                        st.subheader("Detaillierter Vergleich")
+                        
+                        # Prepare comparison data
+                        comparison_data = []
+                        for idx, row in selected_df.iterrows():
+                            # Location display
+                            location_display = row['location']
+                            if 'district' in row and row['district']:
+                                location_display = f"{row['district']}, {row['location']}"
+                            
+                            # Features
+                            features = []
+                            if row.get('has_balcony', False):
+                                features.append("Balkon")
+                            if row.get('has_garden', False):
+                                features.append("Garten")
+                            if row.get('has_elevator', False):
+                                features.append("Aufzug")
+                            if row.get('is_furnished', False):
+                                features.append("Möbliert")
+                            if row.get('pets_allowed', False):
+                                features.append("Haustiere")
+                            if row.get('is_wg', False):
+                                features.append("WG")
+                            
+                            # Create entry
+                            entry = {
+                                'Titel': row['title'],
+                                'Preis': f"{row['price']}€",
+                                'Größe': f"{row['size']}m²",
+                                'Zimmer': row['rooms'],
+                                'Ort': location_display,
+                                'Quelle': row['source'],
+                                'Eigenschaften': ", ".join(features) if features else "Keine",
+                                'Verfügbar ab': row.get('available_from', 'Nicht angegeben'),
+                                'Etage': row.get('floor', 'Nicht angegeben'),
+                                'Link': f"[Link]({row['url']})"
+                            }
+                            comparison_data.append(entry)
+                        
+                        # Create comparison DataFrame
+                        comparison_df = pd.DataFrame(comparison_data)
+                        
+                        # Use Streamlit's dataframe display
+                        st.dataframe(comparison_df, use_container_width=True)
+                        
+                        # Add option to close comparison
+                        if st.button("Vergleich schließen", use_container_width=True):
+                            st.session_state.show_comparison = False
+                            st.experimental_rerun()
                 
                 # Display each listing as a card
-                for index, row in df_results.iterrows():
+                for index, row in filtered_df_results.iterrows():
+                    # Determine if this listing is selected
+                    is_selected = st.session_state.selected_listings.get(index, False)
+                    is_favorite = st.session_state.favorite_listings.get(index, False)
+                    
+                    # Apply a highlight style if selected
+                    card_style = "background-color: #f0f8ff; border: 2px solid #4682b4; border-radius: 5px; padding: 10px; margin: 5px 0;" if is_selected else ""
+                    
                     with st.container():
-                        col1, col2, col3 = st.columns([1, 2, 1])
+                        if is_selected:
+                            st.markdown(f"<div style='{card_style}'>", unsafe_allow_html=True)
+                        
+                        # Add a checkbox for selection at the beginning of each listing
+                        select_col, fav_col, col1, col2, col3 = st.columns([0.15, 0.15, 1, 2, 1])
+                        
+                        with select_col:
+                            # Create a unique key for each checkbox
+                            checkbox_key = f"select_{index}"
+                            
+                            # Initialize in session state if not present
+                            if index not in st.session_state.selected_listings:
+                                st.session_state.selected_listings[index] = False
+                                
+                            # Display checkbox and store result in session state
+                            is_selected = st.checkbox("", value=st.session_state.selected_listings.get(index, False), 
+                                                   key=checkbox_key)
+                            st.session_state.selected_listings[index] = is_selected
+                        
+                        with fav_col:
+                            # Favorite button
+                            fav_key = f"fav_{index}"
+                            if index not in st.session_state.favorite_listings:
+                                st.session_state.favorite_listings[index] = False
+                            
+                            # Show star icon based on favorite status
+                            fav_icon = "⭐" if st.session_state.favorite_listings.get(index, False) else "☆"
+                            fav_button = st.button(fav_icon, key=fav_key)
+                            
+                            if fav_button:
+                                # Toggle favorite status
+                                st.session_state.favorite_listings[index] = not st.session_state.favorite_listings.get(index, False)
+                                st.experimental_rerun()
                         
                         with col1:
                             if row.get('image_url'):
@@ -867,6 +1410,9 @@ def main():
                                             st.success(message)
                                         else:
                                             st.error(message)
+                        
+                        if is_selected:
+                            st.markdown("</div>", unsafe_allow_html=True)
                         
                         st.divider()
             else:

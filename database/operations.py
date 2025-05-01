@@ -1,6 +1,9 @@
 from .models import Listing, Application, get_session
 from sqlalchemy.exc import IntegrityError
 import logging
+from sqlalchemy import inspect
+from sqlalchemy import text
+from sqlalchemy.orm import aliased
 
 logger = logging.getLogger(__name__)
 
@@ -254,10 +257,70 @@ def get_applied_listings():
     """
     session = get_session()
     try:
-        results = session.query(Listing, Application).join(
-            Application, Listing.id == Application.listing_id
-        ).all()
-        return results
+        # Try to use a more resilient query that selects columns explicitly
+        # instead of using the ORM's automatic column selection
+        try:
+            # Try to get column names dynamically to avoid missing column errors
+            inspector = inspect(session.get_bind())
+            listing_columns = [column['name'] for column in inspector.get_columns('listings')]
+            application_columns = [column['name'] for column in inspector.get_columns('applications')]
+            
+            # Create dynamic query based on available columns
+            query_parts = []
+            
+            # Add listing columns
+            for col in listing_columns:
+                query_parts.append(f"listings.{col} AS listings_{col}")
+            
+            # Add application columns
+            for col in application_columns:
+                query_parts.append(f"applications.{col} AS applications_{col}")
+            
+            # Create final query
+            query = text(f"""
+                SELECT {', '.join(query_parts)}
+                FROM listings
+                JOIN applications ON listings.id = applications.listing_id
+            """)
+            
+            result = session.execute(query)
+            
+            # Process the result
+            Listing_alias = aliased(Listing)
+            Application_alias = aliased(Application)
+            
+            # Convert row proxies to model objects
+            processed_results = []
+            for row in result:
+                # Create Listing object
+                listing = Listing_alias()
+                for col in listing_columns:
+                    if hasattr(listing, col):
+                        setattr(listing, col, getattr(row, f"listings_{col}"))
+                
+                # Create Application object
+                application = Application_alias()
+                for col in application_columns:
+                    if hasattr(application, col):
+                        setattr(application, col, getattr(row, f"applications_{col}"))
+                
+                processed_results.append((listing, application))
+            
+            return processed_results
+            
+        except Exception as e:
+            # Log the error
+            logger.warning(f"Error using dynamic query in get_applied_listings: {e}")
+            logger.warning("Falling back to standard ORM query...")
+            
+            # Fall back to the standard ORM query
+            results = session.query(Listing, Application).join(
+                Application, Listing.id == Application.listing_id
+            ).all()
+            return results
+    except Exception as e:
+        logger.error(f"Error in get_applied_listings: {e}")
+        return []  # Return empty list on error
     finally:
         session.close()
 
