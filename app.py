@@ -671,40 +671,45 @@ def main():
         test_source = st.selectbox("Quelle zum Testen", 
                                   ["wg_gesucht", "immoscout24", "immonet", "immowelt"])
         
+        # Define an async function for scraper testing
+        async def test_scraper(scraper_type, test_filters):
+            # Create and run the appropriate scraper
+            if scraper_type == "wg_gesucht":
+                scraper = WGGesuchtScraper()
+            elif scraper_type == "immoscout24":
+                scraper = ImmoScoutScraper()
+            elif scraper_type == "immonet":
+                scraper = ImmonetScraper()
+            elif scraper_type == "immowelt":
+                scraper = ImmoweltScraper()
+            
+            # Initialize, run search, and close
+            try:
+                await scraper.initialize()
+                test_results = await scraper.search(test_filters)
+                return test_results
+            finally:
+                await scraper.close()
+        
         if st.button("Scraper testen"):
             st.write(f"Test für {test_source} wird gestartet...")
             with st.spinner("Test läuft..."):
                 try:
-                    # Run a single scraper test
+                    # Run the async test function
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
                     
                     # Create a simple search filter
                     test_filters = {'location': 'Berlin', 'max_price': 2000}
                     
-                    # Create and run the appropriate scraper
-                    if test_source == "wg_gesucht":
-                        scraper = WGGesuchtScraper()
-                    elif test_source == "immoscout24":
-                        scraper = ImmoScoutScraper()
-                    elif test_source == "immonet":
-                        scraper = ImmonetScraper()
-                    elif test_source == "immowelt":
-                        scraper = ImmoweltScraper()
+                    # Run the test
+                    test_results = loop.run_until_complete(test_scraper(test_source, test_filters))
+                    st.write(f"Test erfolgreich! {len(test_results)} Ergebnisse gefunden.")
                     
-                    # Initialize, run search, and close
-                    try:
-                        await scraper.initialize()
-                        test_results = await scraper.search(test_filters)
-                        st.write(f"Test erfolgreich! {len(test_results)} Ergebnisse gefunden.")
-                        
-                        # Show sample results
-                        if test_results:
-                            with st.expander("Beispiel-Ergebnisse"):
-                                st.json(test_results[:3])
-                    finally:
-                        await scraper.close()
-                        
+                    # Show sample results
+                    if test_results:
+                        with st.expander("Beispiel-Ergebnisse"):
+                            st.json(test_results[:3])
                 except Exception as e:
                     st.error(f"Fehler beim Testen des Scrapers: {e}")
         
