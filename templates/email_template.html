@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Apartment Application</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header {
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+        .content {
+            margin-bottom: 30px;
+        }
+        .footer {
+            border-top: 1px solid #eee;
+            padding-top: 10px;
+            font-size: 0.9em;
+            color: #777;
+        }
+        .contact-info {
+            background-color: #f9f9f9;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        h1 {
+            color: #444;
+            font-size: 1.5em;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Wohnungsanfrage: {{listing_title}}</h1>
+    </div>
+    
+    <div class="content">
+        <p>Sehr geehrte Damen und Herren,</p>
+        
+        <p>hiermit bewerbe ich mich um die Wohnung "{{listing_title}}" in {{listing_location}}.</p>
+        
+        <p>{{custom_message}}</p>
+        
+        <div class="contact-info">
+            <p><strong>Meine Kontaktdaten:</strong></p>
+            <ul>
+                <li><strong>Name:</strong> {{first_name}} {{last_name}}</li>
+                <li><strong>E-Mail:</strong> {{email}}</li>
+                <li><strong>Telefon:</strong> {{phone}}</li>
+            </ul>
+        </div>
+        
+        <p>Ich habe dieser E-Mail alle erforderlichen Unterlagen beigefügt:</p>
+        <ul>
+            <li>SCHUFA-Auskunft</li>
+            <li>Einkommensnachweis</li>
+            <li>Personalausweis-Kopie</li>
+            <li>Mietschuldenfreiheitsbescheinigung</li>
+        </ul>
+        
+        <p>Ich freue mich auf Ihre Rückmeldung und stehe für eine Besichtigung jederzeit zur Verfügung.</p>
+        
+        <p>Mit freundlichen Grüßen,<br>
+        {{first_name}} {{last_name}}</p>
+    </div>
+    
+    <div class="footer">
+        <p>Diese Nachricht wurde über WohnungAgent gesendet</p>
+    </div>
+</body>
+</html> 

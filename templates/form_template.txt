@@ -1,0 +1,14 @@
+Sehr geehrte Damen und Herren,
+
+hiermit bewerbe ich mich um die Wohnung.
+
+Ich bin ein zuverlässiger Mieter mit festem Einkommen und suche nach einer langfristigen Wohnmöglichkeit. Derzeit arbeite ich als {{occupation}} und kann alle notwendigen Unterlagen wie SCHUFA-Auskunft, Einkommensnachweise und Mietschuldenfreiheitsbescheinigung zur Verfügung stellen.
+
+{{custom_message}}
+
+Ich würde mich sehr über eine Besichtigung freuen und stehe Ihnen für Rückfragen jederzeit zur Verfügung.
+
+Mit freundlichen Grüßen,
+{{first_name}} {{last_name}}
+Tel: {{phone}}
+E-Mail: {{email}} 
