@@ -57,11 +57,18 @@ def load_template(template_path: str) -> str:
 
 # Main async function to run search
 async def run_search(filters, search_sources):
+    # Log the filters for debugging
+    logger.info(f"Starting search with filters: {filters}")
+    logger.info(f"Search sources: {search_sources}")
+    
     search_manager = SearchManager(sources=search_sources)
     try:
         await search_manager.initialize_scrapers(headless=True)
         listings = await search_manager.search_all(filters)
+        logger.info(f"Found {len(listings)} new listings from scrapers")
+        
         all_listings = search_manager.combine_with_database(listings, filters)
+        logger.info(f"Combined total: {len(all_listings)} listings after filtering")
         return all_listings
     finally:
         await search_manager.close_scrapers()
@@ -89,9 +96,16 @@ async def apply_to_listing(listing, application_data, attachments=None):
         await scraper.close()
 
 # Store personal info in browser session
-def save_to_session_state(key, value):
-    st.session_state[key] = value
-    # Save to browser local storage using Streamlit components
+def update_session_state():
+    """Updates session state with values from input widgets"""
+    # Update personal data from input fields
+    st.session_state.first_name = st.session_state.input_first_name
+    st.session_state.last_name = st.session_state.input_last_name
+    st.session_state.email = st.session_state.input_email
+    st.session_state.phone = st.session_state.input_phone
+    st.session_state.gender = st.session_state.input_gender
+    st.session_state.occupation = st.session_state.input_occupation
+    st.session_state.custom_message = st.session_state.input_custom_message
     st.session_state.saved_data = True
 
 # Initialize session state for personal data
@@ -176,30 +190,30 @@ def main():
             
             # Get values from session state if they exist
             first_name = st.text_input("Vorname", value=st.session_state.first_name, 
-                                     on_change=save_to_session_state, args=("first_name",), key="input_first_name")
+                                     key="input_first_name", on_change=update_session_state)
                                      
             last_name = st.text_input("Nachname", value=st.session_state.last_name,
-                                    on_change=save_to_session_state, args=("last_name",), key="input_last_name")
+                                    key="input_last_name", on_change=update_session_state)
                                     
             email = st.text_input("E-Mail", value=st.session_state.email,
-                                on_change=save_to_session_state, args=("email",), key="input_email")
+                                key="input_email", on_change=update_session_state)
                                 
             phone = st.text_input("Telefon", value=st.session_state.phone,
-                                on_change=save_to_session_state, args=("phone",), key="input_phone")
+                                key="input_phone", on_change=update_session_state)
                                 
             gender = st.selectbox("Anrede", options=["male", "female"], 
                                 format_func=lambda x: "Herr" if x == "male" else "Frau",
                                 index=0 if st.session_state.gender == "male" else 1,
-                                on_change=save_to_session_state, args=("gender",), key="input_gender")
+                                key="input_gender", on_change=update_session_state)
                                 
             occupation = st.text_input("Beruf", value=st.session_state.occupation,
-                                     on_change=save_to_session_state, args=("occupation",), key="input_occupation")
+                                     key="input_occupation", on_change=update_session_state)
             
             custom_message = st.text_area("Persönliche Nachricht", 
                                         value=st.session_state.custom_message,
                                         height=100,
                                         help="Diese Nachricht wird in Bewerbungen eingefügt.",
-                                        on_change=save_to_session_state, args=("custom_message",), key="input_custom_message")
+                                        key="input_custom_message", on_change=update_session_state)
             
             # File uploads for attachments
             st.subheader("Dokumente für Bewerbungen")
@@ -227,7 +241,7 @@ def main():
                 attachments.append(os.path.join("temp", f"id.{ext}"))
     
     # Create tabs for different sections
-    tab1, tab2 = st.tabs(["Wohnungssuche", "Bewerbungen"])
+    tab1, tab2, tab3 = st.tabs(["Wohnungssuche", "Bewerbungen", "Debug"])
     
     with tab1:
         # Check if personal data is filled out
@@ -241,6 +255,7 @@ def main():
         col1, col2 = st.columns([1, 3])
         with col1:
             search_button = st.button("🔍 Suche starten", use_container_width=True)
+            demo_button = st.button("👥 Demo-Modus", use_container_width=True, help="Zeigt Beispiel-Wohnungen ohne echte Suche")
             
         # Selected sources
         sources = []
@@ -298,6 +313,140 @@ def main():
                     # Store results in session state
                     st.session_state.search_results = results
                     st.success(f"{len(results)} Wohnungen gefunden")
+        
+        # Demo mode - show example listings
+        if demo_button:
+            with st.spinner("Lade Demo-Wohnungen..."):
+                # Create some example listings
+                example_listings = [
+                    {
+                        'title': 'Schöne 2-Zimmer Wohnung in Berlin-Mitte',
+                        'price': 950,
+                        'size': 65,
+                        'rooms': 2,
+                        'location': 'Berlin',
+                        'district': 'Mitte',
+                        'url': 'https://example.com/listing1',
+                        'source': 'immoscout24',
+                        'image_url': 'https://via.placeholder.com/200x150?text=Apartment+1',
+                        'has_balcony': True,
+                        'has_garden': False,
+                        'has_elevator': True,
+                        'is_furnished': False,
+                        'pets_allowed': True,
+                        'is_wg': False,
+                        'available_from': '2023-06-01',
+                        'floor': '3. Stock'
+                    },
+                    {
+                        'title': 'WG-Zimmer in Berlin-Kreuzberg',
+                        'price': 550,
+                        'size': 18,
+                        'rooms': 1,
+                        'location': 'Berlin',
+                        'district': 'Kreuzberg',
+                        'url': 'https://example.com/listing2',
+                        'source': 'wg_gesucht',
+                        'image_url': 'https://via.placeholder.com/200x150?text=WG+Room',
+                        'has_balcony': False,
+                        'has_garden': False,
+                        'has_elevator': False,
+                        'is_furnished': True,
+                        'pets_allowed': False,
+                        'is_wg': True,
+                        'available_from': '2023-05-15',
+                        'floor': '1. Stock'
+                    },
+                    {
+                        'title': '3-Zimmer Wohnung mit Balkon und Garten',
+                        'price': 1200,
+                        'size': 80,
+                        'rooms': 3,
+                        'location': 'Berlin',
+                        'district': 'Charlottenburg',
+                        'url': 'https://example.com/listing3',
+                        'source': 'immonet',
+                        'image_url': 'https://via.placeholder.com/200x150?text=Apartment+3',
+                        'has_balcony': True,
+                        'has_garden': True,
+                        'has_elevator': False,
+                        'is_furnished': False,
+                        'pets_allowed': True,
+                        'is_wg': False,
+                        'available_from': 'Sofort',
+                        'floor': 'Erdgeschoss'
+                    },
+                    {
+                        'title': 'Penthouse mit Dachterrasse in Berlin-Mitte',
+                        'price': 1800,
+                        'size': 100,
+                        'rooms': 4,
+                        'location': 'Berlin',
+                        'district': 'Mitte',
+                        'url': 'https://example.com/listing4',
+                        'source': 'immowelt',
+                        'image_url': 'https://via.placeholder.com/200x150?text=Penthouse',
+                        'has_balcony': True,
+                        'has_garden': False,
+                        'has_elevator': True,
+                        'is_furnished': True,
+                        'pets_allowed': True,
+                        'is_wg': False,
+                        'available_from': '2023-06-15',
+                        'floor': '6. Stock'
+                    },
+                    {
+                        'title': 'Gemütliche 2-Zimmer Altbauwohnung in Prenzlauer Berg',
+                        'price': 850,
+                        'size': 55,
+                        'rooms': 2,
+                        'location': 'Berlin',
+                        'district': 'Prenzlauer Berg',
+                        'url': 'https://example.com/listing5',
+                        'source': 'immoscout24',
+                        'image_url': 'https://via.placeholder.com/200x150?text=Altbau',
+                        'has_balcony': False,
+                        'has_garden': False,
+                        'has_elevator': False,
+                        'is_furnished': False,
+                        'pets_allowed': False,
+                        'is_wg': False,
+                        'available_from': '2023-07-01',
+                        'floor': '2. Stock'
+                    }
+                ]
+                
+                # Apply basic filters to demo listings
+                filtered_listings = []
+                for listing in example_listings:
+                    # Simple filtering for demo mode
+                    if listing['price'] > filters['max_price']:
+                        continue
+                    if listing['rooms'] < filters['min_rooms'] or listing['rooms'] > filters['max_rooms']:
+                        continue
+                    if listing['size'] < filters['min_size']:
+                        continue
+                    if filters['district'] and filters['district'].lower() not in listing['district'].lower():
+                        continue
+                    if filters['balcony'] and not listing.get('has_balcony', False):
+                        continue
+                    if filters['garden'] and not listing.get('has_garden', False):
+                        continue
+                    if filters['elevator'] and not listing.get('has_elevator', False):
+                        continue
+                    if filters['furnished'] and not listing.get('is_furnished', False):
+                        continue
+                    if filters['pets_allowed'] and not listing.get('pets_allowed', False):
+                        continue
+                    if not filters['wg'] and listing.get('is_wg', False):
+                        continue
+                    
+                    # Add to filtered listings
+                    filtered_listings.append(listing)
+                
+                # Store results in session state
+                st.session_state.search_results = filtered_listings
+                st.success(f"{len(filtered_listings)} Demo-Wohnungen gefunden")
         
         # Display search results if available
         if 'search_results' in st.session_state:
@@ -482,6 +631,88 @@ def main():
                     st.divider()
         else:
             st.info("Noch keine Bewerbungen vorhanden.")
+
+    # Debug tab content
+    with tab3:
+        st.header("Debug-Informationen")
+        
+        # Show current filters
+        st.subheader("Aktuelle Filter")
+        st.json(filters)
+        
+        # Show selected sources
+        st.subheader("Ausgewählte Quellen")
+        st.write(sources)
+        
+        # Show search results info
+        if 'search_results' in st.session_state:
+            st.subheader("Suchergebnisse")
+            st.write(f"Anzahl der Ergebnisse: {len(st.session_state.search_results)}")
+            
+            # Show source breakdown
+            if len(st.session_state.search_results) > 0:
+                sources_count = {}
+                for listing in st.session_state.search_results:
+                    source = listing.get('source', 'unknown')
+                    sources_count[source] = sources_count.get(source, 0) + 1
+                
+                st.write("Aufschlüsselung nach Quellen:")
+                for source, count in sources_count.items():
+                    st.write(f"- {source}: {count} Wohnungen")
+                
+                # Show first 3 listings in raw format for debugging
+                st.subheader("Beispiel-Daten (Raw)")
+                for i, listing in enumerate(st.session_state.search_results[:3]):
+                    with st.expander(f"Wohnung {i+1}: {listing.get('title', 'No title')}"):
+                        st.json(listing)
+        
+        # Add a manual scraper test button
+        st.subheader("Scraper-Test")
+        test_source = st.selectbox("Quelle zum Testen", 
+                                  ["wg_gesucht", "immoscout24", "immonet", "immowelt"])
+        
+        if st.button("Scraper testen"):
+            st.write(f"Test für {test_source} wird gestartet...")
+            with st.spinner("Test läuft..."):
+                try:
+                    # Run a single scraper test
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    
+                    # Create a simple search filter
+                    test_filters = {'location': 'Berlin', 'max_price': 2000}
+                    
+                    # Create and run the appropriate scraper
+                    if test_source == "wg_gesucht":
+                        scraper = WGGesuchtScraper()
+                    elif test_source == "immoscout24":
+                        scraper = ImmoScoutScraper()
+                    elif test_source == "immonet":
+                        scraper = ImmonetScraper()
+                    elif test_source == "immowelt":
+                        scraper = ImmoweltScraper()
+                    
+                    # Initialize, run search, and close
+                    try:
+                        await scraper.initialize()
+                        test_results = await scraper.search(test_filters)
+                        st.write(f"Test erfolgreich! {len(test_results)} Ergebnisse gefunden.")
+                        
+                        # Show sample results
+                        if test_results:
+                            with st.expander("Beispiel-Ergebnisse"):
+                                st.json(test_results[:3])
+                    finally:
+                        await scraper.close()
+                        
+                except Exception as e:
+                    st.error(f"Fehler beim Testen des Scrapers: {e}")
+        
+        # Add system info
+        st.subheader("System-Informationen")
+        st.write(f"Python-Version: {sys.version}")
+        st.write(f"Platform: {sys.platform}")
+        st.write(f"Working Directory: {os.getcwd()}")
 
 # Run the main app
 if __name__ == "__main__":
