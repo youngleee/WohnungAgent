@@ -11,6 +11,7 @@ import json
 import nest_asyncio
 import sys
 from dotenv import load_dotenv
+import random
 
 # Apply nest_asyncio to allow running async code in Streamlit
 nest_asyncio.apply()
@@ -66,40 +67,72 @@ async def run_search(filters, search_sources):
     logger.info(f"Starting search with filters: {filters}")
     logger.info(f"Search sources: {search_sources}")
     
+    # Create a status container for real-time feedback
+    status_container = st.empty()
+    
+    # List to collect debug information
+    debug_info = []
+    
     search_manager = SearchManager(sources=search_sources)
     try:
-        # Initialize scrapers
+        # Initialize scrapers with detailed feedback
+        status_container.info("Initialisiere Scraper...")
         try:
             await search_manager.initialize_scrapers(headless=True)
+            debug_info.append("✅ Scraper erfolgreich initialisiert")
         except Exception as e:
-            logger.error(f"Error initializing scrapers: {e}")
-            return []  # Return empty list if initialization fails
+            error_msg = f"❌ Fehler beim Initialisieren der Scraper: {e}"
+            logger.error(error_msg)
+            debug_info.append(error_msg)
+            status_container.error(error_msg)
+            return [], debug_info  # Return empty list and debug info if initialization fails
         
-        # Perform search
+        # Perform search with detailed feedback
+        status_container.info("Suche läuft...")
         try:
             listings = await search_manager.search_all(filters)
-            logger.info(f"Found {len(listings)} new listings from scrapers")
+            msg = f"✅ {len(listings)} neue Inserate gefunden"
+            logger.info(msg)
+            debug_info.append(msg)
         except Exception as e:
-            logger.error(f"Error during search: {e}")
+            error_msg = f"❌ Fehler während der Suche: {e}"
+            logger.error(error_msg)
+            debug_info.append(error_msg)
+            status_container.error(error_msg)
             listings = []  # Use empty list if search fails
         
-        # Combine with database
+        # Combine with database with detailed feedback
+        status_container.info("Kombiniere mit Datenbankeinträgen...")
         try:
             all_listings = search_manager.combine_with_database(listings, filters)
-            logger.info(f"Combined total: {len(all_listings)} listings after filtering")
+            msg = f"✅ Insgesamt {len(all_listings)} Inserate nach Filterung"
+            logger.info(msg)
+            debug_info.append(msg)
         except Exception as e:
-            logger.error(f"Error combining with database: {e}")
+            error_msg = f"❌ Fehler beim Kombinieren mit der Datenbank: {e}"
+            logger.error(error_msg)
+            debug_info.append(error_msg)
+            status_container.error(error_msg)
             all_listings = listings  # Use just the scraper listings if database access fails
+        
+        # Clear the status container when done
+        status_container.empty()
             
-        return all_listings
+        return all_listings, debug_info
     except Exception as e:
-        logger.error(f"Unexpected error in run_search: {e}")
-        return []  # Return empty list on error
+        error_msg = f"❌ Unerwarteter Fehler in run_search: {e}"
+        logger.error(error_msg)
+        debug_info.append(error_msg)
+        status_container.error(error_msg)
+        return [], debug_info  # Return empty list and debug info on error
     finally:
         try:
             await search_manager.close_scrapers()
+            debug_info.append("✅ Scraper erfolgreich geschlossen")
         except Exception as e:
-            logger.error(f"Error closing scrapers: {e}")
+            error_msg = f"❌ Fehler beim Schließen der Scraper: {e}"
+            logger.error(error_msg)
+            debug_info.append(error_msg)
 
 # Async function to apply to a listing
 async def apply_to_listing(listing, application_data, attachments=None):
@@ -333,14 +366,105 @@ def main():
                 st.error("Bitte mindestens eine Quelle auswählen")
             else:
                 with st.spinner("Suche läuft... Dies kann einige Minuten dauern."):
-                    # Run the async search function
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    results = loop.run_until_complete(run_search(filters, sources))
-                    
-                    # Store results in session state
-                    st.session_state.search_results = results
-                    st.success(f"{len(results)} Wohnungen gefunden")
+                    # Check if scrapers are disabled
+                    if st.session_state.get('disable_scrapers', False):
+                        # If scrapers are disabled, use demo data instead
+                        st.info("Browser-Scraper sind deaktiviert. Verwende Demo-Daten stattdessen.")
+                        
+                        # Generate demo data for the current search
+                        from datetime import datetime
+                        current_time = datetime.now().strftime("%H%M%S")
+                        districts = ["Zentrum", "Süd", "Nord", "West", "Ost", "Altstadt", "Neustadt"]
+                        
+                        # Generate demo listings
+                        demo_listings = []
+                        for i in range(20):
+                            price = random.randint(500, 2500)
+                            size = random.randint(30, 150)
+                            rooms = random.choice([1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5])
+                            district = random.choice(districts)
+                            
+                            demo_listings.append({
+                                'title': f"Demo: {rooms} Zimmer Wohnung in {location}-{district}",
+                                'price': price,
+                                'size': size,
+                                'rooms': rooms,
+                                'location': location,
+                                'district': district,
+                                'url': f'https://example.com/demo-{current_time}-{i}',
+                                'source': random.choice(sources),
+                                'image_url': f'https://via.placeholder.com/200x150?text=Demo+{i}',
+                                'has_balcony': random.choice([True, False]),
+                                'has_garden': random.choice([True, False]),
+                                'has_elevator': random.choice([True, False]),
+                                'is_furnished': random.choice([True, False]),
+                                'pets_allowed': random.choice([True, False]),
+                                'is_wg': random.choice([True, False]),
+                                'available_from': random.choice(['Sofort', '2023-09-01', '2023-10-01']),
+                                'floor': random.choice(['Erdgeschoss', '1. Stock', '2. Stock', '3. Stock'])
+                            })
+                        
+                        # Apply filters to demo listings
+                        filtered_listings = []
+                        for listing in demo_listings:
+                            # Simple filtering for demo mode
+                            if filters['min_price'] and listing['price'] < filters['min_price']:
+                                continue
+                            if listing['price'] > filters['max_price']:
+                                continue
+                            if listing['rooms'] < filters['min_rooms'] or listing['rooms'] > filters['max_rooms']:
+                                continue
+                            if listing['size'] < filters['min_size']:
+                                continue
+                            if filters['max_size'] and listing['size'] > filters['max_size']:
+                                continue
+                            if filters['district'] and filters['district'].lower() not in listing['district'].lower():
+                                continue
+                            if filters['balcony'] and not listing.get('has_balcony', False):
+                                continue
+                            if filters['garden'] and not listing.get('has_garden', False):
+                                continue
+                            if filters['elevator'] and not listing.get('has_elevator', False):
+                                continue
+                            if filters['furnished'] and not listing.get('is_furnished', False):
+                                continue
+                            if filters['pets_allowed'] and not listing.get('pets_allowed', False):
+                                continue
+                            if not filters['wg'] and listing.get('is_wg', False):
+                                continue
+                            
+                            # Add to filtered listings
+                            filtered_listings.append(listing)
+                        
+                        # Store in session state
+                        st.session_state.search_results = filtered_listings
+                        
+                        # Create debug info
+                        debug_info = [
+                            "ℹ️ Browser-Scraper deaktiviert - verwende Demo-Daten",
+                            f"✅ {len(demo_listings)} Demo-Inserate generiert",
+                            f"✅ {len(filtered_listings)} Inserate nach Filterung"
+                        ]
+                        st.session_state.search_debug_info = debug_info
+                        
+                        if filtered_listings:
+                            st.success(f"{len(filtered_listings)} Wohnungen gefunden (Demo-Modus)")
+                        else:
+                            st.warning("0 Wohnungen gefunden. Bitte passen Sie Ihre Filter an, um mehr Ergebnisse zu sehen.")
+                    else:
+                        # Normal search with real scrapers
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                        results, debug_info = loop.run_until_complete(run_search(filters, sources))
+                        
+                        # Store results and debug info in session state
+                        st.session_state.search_results = results
+                        st.session_state.search_debug_info = debug_info
+                        
+                        if results:
+                            st.success(f"{len(results)} Wohnungen gefunden")
+                        else:
+                            st.warning("0 Wohnungen gefunden. Überprüfen Sie die Debug-Informationen im Debug-Tab für weitere Details.")
         
         # Demo mode - show example listings
         if demo_button:
@@ -441,18 +565,155 @@ def main():
                         'is_wg': False,
                         'available_from': '2023-07-01',
                         'floor': '2. Stock'
+                    },
+                    # Add more varied listings
+                    {
+                        'title': 'Günstiges Studio-Apartment in Neukölln',
+                        'price': 650,
+                        'size': 35,
+                        'rooms': 1,
+                        'location': 'Berlin',
+                        'district': 'Neukölln',
+                        'url': 'https://example.com/listing6',
+                        'source': 'wg_gesucht',
+                        'image_url': 'https://via.placeholder.com/200x150?text=Studio',
+                        'has_balcony': True,
+                        'has_garden': False,
+                        'has_elevator': False,
+                        'is_furnished': True,
+                        'pets_allowed': True,
+                        'is_wg': False,
+                        'available_from': 'Sofort',
+                        'floor': '2. Stock'
+                    },
+                    {
+                        'title': 'Große 4-Zimmer Familienwohnung mit Garten',
+                        'price': 1500,
+                        'size': 110,
+                        'rooms': 4,
+                        'location': 'Berlin',
+                        'district': 'Lichtenberg',
+                        'url': 'https://example.com/listing7',
+                        'source': 'immoscout24',
+                        'image_url': 'https://via.placeholder.com/200x150?text=Family+Home',
+                        'has_balcony': True,
+                        'has_garden': True,
+                        'has_elevator': False,
+                        'is_furnished': False,
+                        'pets_allowed': True,
+                        'is_wg': False,
+                        'available_from': '2023-08-01',
+                        'floor': 'Erdgeschoss'
+                    },
+                    {
+                        'title': 'Modernes Studio mit Balkon in Friedrichshain',
+                        'price': 750,
+                        'size': 40,
+                        'rooms': 1.5,
+                        'location': 'Berlin',
+                        'district': 'Friedrichshain',
+                        'url': 'https://example.com/listing8',
+                        'source': 'immonet',
+                        'image_url': 'https://via.placeholder.com/200x150?text=Modern+Studio',
+                        'has_balcony': True,
+                        'has_garden': False,
+                        'has_elevator': True,
+                        'is_furnished': True,
+                        'pets_allowed': False,
+                        'is_wg': False,
+                        'available_from': '2023-07-15',
+                        'floor': '4. Stock'
+                    },
+                    {
+                        'title': 'WG-Zimmer in 3er-WG, Schöneberg',
+                        'price': 480,
+                        'size': 22,
+                        'rooms': 1,
+                        'location': 'Berlin',
+                        'district': 'Schöneberg',
+                        'url': 'https://example.com/listing9',
+                        'source': 'wg_gesucht',
+                        'image_url': 'https://via.placeholder.com/200x150?text=WG+Zimmer',
+                        'has_balcony': True,
+                        'has_garden': False,
+                        'has_elevator': False,
+                        'is_furnished': False,
+                        'pets_allowed': False,
+                        'is_wg': True,
+                        'available_from': 'Sofort',
+                        'floor': '3. Stock'
+                    },
+                    {
+                        'title': 'Luxus-Apartment mit Dachterrasse',
+                        'price': 2200,
+                        'size': 85,
+                        'rooms': 2,
+                        'location': 'Berlin',
+                        'district': 'Mitte',
+                        'url': 'https://example.com/listing10',
+                        'source': 'immowelt',
+                        'image_url': 'https://via.placeholder.com/200x150?text=Luxury+Apt',
+                        'has_balcony': True,
+                        'has_garden': False,
+                        'has_elevator': True,
+                        'is_furnished': True,
+                        'pets_allowed': True,
+                        'is_wg': False,
+                        'available_from': '2023-09-01',
+                        'floor': '5. Stock'
                     }
                 ]
+                
+                # Create more entries for other cities if the user has selected a different location
+                if location.lower() != 'berlin':
+                    # Generate 5 additional listings for the selected city
+                    locations = [location] * 5
+                    districts = ["Zentrum", "Süd", "Nord", "West", "Ost"]
+                    titles = [
+                        f"Gemütliche 2-Zimmer Wohnung in {location}",
+                        f"Moderne 3-Zimmer Wohnung in {location}",
+                        f"Studio-Apartment in {location}",
+                        f"Schöne Altbauwohnung in {location}",
+                        f"Großzügige 4-Zimmer Wohnung in {location}"
+                    ]
+                    prices = [750, 1100, 650, 900, 1300]
+                    sizes = [55, 75, 40, 60, 90]
+                    rooms = [2, 3, 1, 2, 4]
+                    
+                    for i in range(5):
+                        example_listings.append({
+                            'title': titles[i],
+                            'price': prices[i],
+                            'size': sizes[i],
+                            'rooms': rooms[i],
+                            'location': locations[i],
+                            'district': districts[i],
+                            'url': f'https://example.com/{location.lower()}-{i+1}',
+                            'source': random.choice(['immoscout24', 'immonet', 'immowelt', 'wg_gesucht']),
+                            'image_url': f'https://via.placeholder.com/200x150?text={location}+{i+1}',
+                            'has_balcony': random.choice([True, False]),
+                            'has_garden': random.choice([True, False]),
+                            'has_elevator': random.choice([True, False]),
+                            'is_furnished': random.choice([True, False]),
+                            'pets_allowed': random.choice([True, False]),
+                            'is_wg': random.choice([True, False]),
+                            'available_from': random.choice(['Sofort', '2023-09-01', '2023-10-01']),
+                            'floor': random.choice(['Erdgeschoss', '1. Stock', '2. Stock', '3. Stock', '4. Stock'])
+                        })
                 
                 # Apply basic filters to demo listings
                 filtered_listings = []
                 for listing in example_listings:
                     # Simple filtering for demo mode
+                    if filters['min_price'] and listing['price'] < filters['min_price']:
+                        continue
                     if listing['price'] > filters['max_price']:
                         continue
                     if listing['rooms'] < filters['min_rooms'] or listing['rooms'] > filters['max_rooms']:
                         continue
                     if listing['size'] < filters['min_size']:
+                        continue
+                    if filters['max_size'] and listing['size'] > filters['max_size']:
                         continue
                     if filters['district'] and filters['district'].lower() not in listing['district'].lower():
                         continue
@@ -474,7 +735,18 @@ def main():
                 
                 # Store results in session state
                 st.session_state.search_results = filtered_listings
-                st.success(f"{len(filtered_listings)} Demo-Wohnungen gefunden")
+                
+                if filtered_listings:
+                    st.success(f"{len(filtered_listings)} Demo-Wohnungen gefunden")
+                else:
+                    st.warning("0 Demo-Wohnungen gefunden. Bitte passen Sie Ihre Filter an, um mehr Ergebnisse zu sehen.")
+                    
+                # Add debug info
+                st.session_state.search_debug_info = [
+                    "✅ Demo-Modus aktiviert - keine echten Scraper verwendet",
+                    f"✅ {len(example_listings)} Beispiel-Wohnungen generiert",
+                    f"✅ {len(filtered_listings)} Wohnungen nach Filterung"
+                ]
         
         # Display search results if available
         if 'search_results' in st.session_state:
@@ -663,6 +935,145 @@ def main():
     # Debug tab content
     with tab3:
         st.header("Debug-Informationen")
+        
+        # Add configuration options
+        st.subheader("Konfiguration")
+        
+        # Use session state to persist configuration across reruns
+        if 'disable_scrapers' not in st.session_state:
+            st.session_state.disable_scrapers = False
+            
+        disable_scrapers = st.checkbox(
+            "Browser-Scraper deaktivieren (nur Demo-Daten & Datenbank verwenden)", 
+            value=st.session_state.disable_scrapers,
+            help="Aktivieren Sie diese Option, wenn Sie Probleme mit den Scrapern haben oder wenn Sie in einer Umgebung ohne Browser-Unterstützung arbeiten."
+        )
+        
+        # Update session state when checkbox changes
+        if disable_scrapers != st.session_state.disable_scrapers:
+            st.session_state.disable_scrapers = disable_scrapers
+            st.success(f"Browser-Scraper {'deaktiviert' if disable_scrapers else 'aktiviert'}. Diese Einstellung bleibt erhalten, bis Sie sie ändern.")
+        
+        # Show search debug info if available
+        if 'search_debug_info' in st.session_state and st.session_state.search_debug_info:
+            st.subheader("Letzte Suchdiagnose")
+            for info in st.session_state.search_debug_info:
+                if info.startswith("❌"):
+                    st.error(info)
+                elif info.startswith("✅"):
+                    st.success(info)
+                else:
+                    st.info(info)
+        
+        # Add a database connectivity test
+        st.subheader("Datenbank-Konnektivität")
+        if st.button("Datenbank-Verbindung testen"):
+            try:
+                from database.models import get_session
+                session = get_session()
+                connection_working = True
+                st.success("✅ Datenbankverbindung erfolgreich hergestellt")
+                
+                # Try to count listings
+                try:
+                    from database.models import Listing
+                    count = session.query(Listing).count()
+                    st.info(f"Anzahl der Einträge in der Datenbank: {count}")
+                except Exception as e:
+                    st.error(f"Fehler beim Zählen der Einträge: {e}")
+            except Exception as e:
+                st.error(f"❌ Fehler bei der Datenbankverbindung: {e}")
+                
+        # Add mock data entry option to help with testing
+        st.subheader("Mock-Daten hinzufügen")
+        if st.button("Test-Wohnungen zur Datenbank hinzufügen"):
+            try:
+                from database.models import Listing, get_session
+                from database.operations import add_listing
+                
+                # Create some example listings for the database
+                example_listings = [
+                    {
+                        'title': 'DB Test: 2-Zimmer Wohnung in Berlin-Mitte',
+                        'price': 900,
+                        'size': 60,
+                        'rooms': 2,
+                        'location': 'Berlin',
+                        'district': 'Mitte',
+                        'url': f'https://example.com/test-listing-{int(time.time())}',
+                        'source': 'test_data',
+                        'has_balcony': True,
+                        'has_garden': False,
+                        'has_elevator': True,
+                        'is_furnished': False,
+                        'pets_allowed': True,
+                        'is_wg': False,
+                        'available_from': '2023-06-01',
+                        'floor': '3. Stock'
+                    }
+                ]
+                
+                # Add to database
+                added = 0
+                for listing_data in example_listings:
+                    result = add_listing(listing_data)
+                    if result:
+                        added += 1
+                
+                st.success(f"{added} Test-Wohnungen zur Datenbank hinzugefügt")
+            except Exception as e:
+                st.error(f"Fehler beim Hinzufügen von Mock-Daten: {e}")
+        
+        # Add direct database search option
+        st.subheader("Direkte Datenbank-Suche")
+        if st.button("Nur Datenbank durchsuchen (keine Scraper)"):
+            try:
+                from database.operations import get_listings_with_filters
+                
+                db_listings = get_listings_with_filters(filters)
+                
+                if db_listings:
+                    # Convert DB listings to dictionaries
+                    db_listings_dict = []
+                    try:
+                        db_listings_dict = [
+                            {
+                                'id': listing.id,
+                                'title': listing.title,
+                                'price': listing.price,
+                                'size': listing.size,
+                                'rooms': listing.rooms,
+                                'location': listing.location,
+                                'url': listing.url,
+                                'contact_email': getattr(listing, 'contact_email', None),
+                                'has_form': getattr(listing, 'has_form', False),
+                                'has_balcony': getattr(listing, 'has_balcony', False),
+                                'has_garden': getattr(listing, 'has_garden', False),
+                                'has_elevator': getattr(listing, 'has_elevator', False),
+                                'is_furnished': getattr(listing, 'is_furnished', False),
+                                'pets_allowed': getattr(listing, 'pets_allowed', False),
+                                'is_wg': getattr(listing, 'is_wg', False),
+                                'district': getattr(listing, 'district', None),
+                                'available_from': getattr(listing, 'available_from', None),
+                                'floor': getattr(listing, 'floor', None),
+                                'image_url': getattr(listing, 'image_url', None),
+                                'source': listing.source,
+                                'created_at': listing.created_at,
+                                'from_db': True
+                            }
+                            for listing in db_listings
+                        ]
+                        
+                        # Store in session state and show count
+                        st.session_state.search_results = db_listings_dict
+                        st.success(f"{len(db_listings_dict)} Wohnungen in der Datenbank gefunden")
+                        
+                    except Exception as e:
+                        st.error(f"Fehler beim Konvertieren der Datenbankeinträge: {e}")
+                else:
+                    st.info("Keine Wohnungen in der Datenbank gefunden.")
+            except Exception as e:
+                st.error(f"Fehler bei der Datenbanksuche: {e}")
         
         # Show current filters
         st.subheader("Aktuelle Filter")
